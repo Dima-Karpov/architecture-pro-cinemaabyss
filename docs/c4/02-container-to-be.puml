@@ -1,0 +1,148 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Container — CinemaAbyss (To-Be)
+
+LAYOUT_WITH_LEGEND()
+
+Person(user, "Пользователь", "Смотрит каталог, оформляет подписку, получает уведомления")
+
+System_Boundary(eco, "Экосистема «Кинобездна»") {
+  Container_Boundary(clients, "Клиенты") {
+    Container(smarttv, "SmartTV", "TV app", "Приложение для Smart TV")
+    Container(mobile, "Mobile", "iOS / Android", "Мобильное приложение")
+    Container(web, "Web", "SPA / browser", "Веб-клиент")
+  }
+
+  Container(proxy, "proxy-service", "Go :8000", "API Gateway. Единая точка входа. Strangler Fig (MOVIES_MIGRATION_PERCENT)")
+
+  Container_Boundary(monolithCtx, "Monolith — bounded contexts") {
+    Container(monolith, "monolith", "Go :8080", "users · payments · subscriptions · discounts")
+  }
+
+  Container(movies, "movies-service", "Go :8081", "Метаданные фильмов, жанры, рейтинги каталога")
+  Container(events, "events-service", "Go :8082", "REST ingestion User / Payment / Movie events → Kafka")
+
+  Container(orchestrator, "billing-orchestrator", "Go", "Saga: charge payment → activate subscription → notify")
+  ContainerDb(pgOrch, "pg-orchestrator", "PostgreSQL", "saga_id, step, status, compensation log")
+
+  Container(notif, "notifications-service", "Go", "Kafka consumer, inbox, delivery worker")
+  ContainerDb(pgNotif, "pg-notifications", "PostgreSQL", "inbox, delivery outbox, DLQ metadata")
+
+  ContainerDb(pg, "PostgreSQL", "PostgreSQL", "cinemaabyss — monolith и movies делят схему; далее db-per-service")
+  ContainerQueue(kafka, "Kafka", "message broker", "movie-events, user-events, payment-events")
+  Container(redis, "Redis", "Redis", "rate limit counters + Pub/Sub realtime")
+}
+
+System_Ext(reco, "Recommendations", "Внешняя рекомендательная система (async, кейс)")
+System_Ext(push, "Push Gateway", "FCM / APNs")
+System_Ext(email, "Email Provider", "SendGrid / SES")
+System_Ext(sms, "SMS Provider", "опционально, future")
+
+Rel(user, web, "Использует", "HTTPS")
+Rel(user, mobile, "Использует", "HTTPS")
+Rel(user, smarttv, "Использует", "HTTPS")
+
+Rel(web, proxy, "REST API", "HTTPS JSON sync")
+Rel(mobile, proxy, "REST API", "HTTPS JSON sync")
+Rel(smarttv, proxy, "REST API", "HTTPS JSON sync")
+
+Rel(proxy, monolith, "/api/auth/*, /api/users, /api/payments, /api/subscriptions", "HTTP JSON sync")
+Rel(proxy, movies, "/api/movies, Strangler %", "HTTP JSON sync")
+Rel(proxy, events, "/api/events/* ingestion", "HTTP JSON sync")
+Rel(proxy, orchestrator, "POST purchase subscription", "HTTP JSON sync")
+
+Rel(orchestrator, pgOrch, "persist saga state", "SQL sync")
+Rel(orchestrator, monolith, "1 charge · 2 activate", "HTTP JSON sync")
+Rel(orchestrator, kafka, "3 SubscriptionActivated", "async produce")
+
+Rel(monolith, pg, "users, payments, subscriptions", "SQL sync")
+Rel(movies, pg, "movies, movie_genres", "SQL sync")
+
+Rel(movies, kafka, "MovieCreated, MovieRated", "async produce")
+Rel(monolith, kafka, "user / payment events", "async produce (future / via events API)")
+Rel(events, kafka, "domain events", "async produce")
+
+Rel(kafka, notif, "movie-events, user-events, payment-events", "async consume")
+Rel(kafka, reco, "consume events", "async, future", $tags="extension")
+
+Rel(notif, pgNotif, "inbox, delivery jobs, DLQ", "SQL sync")
+Rel(notif, push, "send push", "HTTP sync + retry")
+Rel(notif, email, "send email", "HTTP sync + retry")
+Rel(notif, sms, "send SMS", "HTTP sync + retry, future", $tags="extension")
+
+Rel(proxy, redis, "rate limit counters", "sync")
+Rel(notif, redis, "Pub/Sub user:{id}", "sync")
+Rel(redis, web, "WebSocket fanout «бам»", "async, future", $tags="extension")
+
+note right of proxy
+  **authz (не auth-service!):**
+  validate JWT до маршрутизации
+  публичный whitelist: /api/auth/*, /health
+  защищённые: остальное → 401
+  ----
+  **Strangler Fig:** MOVIES_MIGRATION_PERCENT
+  **Demetra #4:** rate limiting (token bucket)
+  ----
+  единая точка вызова для всех клиентов
+end note
+
+note right of monolith
+  **bounded contexts (внутри процесса)**
+  users — /api/users
+  **authn:** /api/auth/login|register|refresh
+  payments — /api/payments (Idempotency-Key)
+  subscriptions — /api/subscriptions
+  discounts — задел (кейс, в коде нет)
+  views, ratings — таблицы есть, API future
+  ----
+  JWT sign здесь; proxy только verify
+  **Strangler next:** user-service (users+authn)
+  отдельный auth-service — не планируем
+end note
+
+note right of movies
+  первый вынесенный сервис (Strangler)
+  **Demetra #7:** transactional outbox
+  → Kafka movie-events
+end note
+
+note right of events
+  REST ingestion (задание 2)
+  producer в Kafka
+end note
+
+note right of orchestrator
+  **расширение / Demetra #12 Saga**
+  payment → subscription → notify
+  компенсации в одном месте
+  notify — только async через Kafka
+end note
+
+note right of notif
+  **расширение**
+  не принимает запросы пользователя
+  **Demetra:** inbox, delivery outbox,
+  retry + jitter, breaker per provider, DLQ
+end note
+
+note right of redis
+  **расширение / Demetra #11**
+  не дублирует Kafka:
+  эфемерное realtime vs
+  обязательная доставка событий
+end note
+
+note bottom of pg
+  по заданию 1: одна БД cinemaabyss
+  monolith + movies-service
+  ----
+  aspirational: pg-orchestrator,
+  pg-notifications — отдельные БД
+end note
+
+Lay_R(smarttv, mobile)
+Lay_R(mobile, web)
+
+SHOW_LEGEND()
+@enduml

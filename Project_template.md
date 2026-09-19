@@ -5,7 +5,11 @@
 1. Спроектируйте to be архитектуру КиноБездны, разделив всю систему на отдельные домены и организовав интеграционное взаимодействие и единую точку вызова сервисов.
 Результат представьте в виде контейнерной диаграммы в нотации С4.
 Добавьте ссылку на файл в этот шаблон
-[ссылка на файл](ссылка)
+
+- [docs/c4/02-container-to-be.puml](docs/c4/02-container-to-be.puml) — C4 Container To-Be
+- [docs/domains-as-is-to-be.md](docs/domains-as-is-to-be.md) — домены, bounded contexts, интеграция
+
+To-Be: **proxy-service** — единая точка входа для web / mobile / Smart TV; **movies-service** — первый вынесенный домен (Strangler Fig); **monolith** — users, payments, subscriptions, скидки (bounded contexts внутри одного процесса); **events-service** + **Kafka** — ingestion и шина доменных событий. Sync — HTTP через proxy; async — Kafka. Payments и subscriptions пока в monolith, не отдельные микросервисы. Auth: login/JWT в monolith (users), проверка token на proxy.
 
 
 ## Задание 2

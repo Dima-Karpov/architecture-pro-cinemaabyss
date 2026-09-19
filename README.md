@@ -1,5 +1,25 @@
 # Архитектура микросервисов CinemaAbyss
 
+## Задание 1. Проектирование архитектуры (To-Be)
+
+Домены As-Is → To-Be, интеграция и единая точка входа — в [docs/domains-as-is-to-be.md](docs/domains-as-is-to-be.md).
+
+| Домен | To-Be контейнер |
+| --- | --- |
+| Пользователи, authn | **monolith** (bounded context users) |
+| Метаданные фильмов | **movies-service** |
+| Платежи, подписки, скидки | **monolith** (bounded contexts) |
+| Domain events | **events-service** + **Kafka** |
+| Рекомендации | **System_Ext** (внешняя система) |
+
+**Единая точка входа:** `proxy-service` (:8000) — web / mobile / Smart TV → API Gateway → monolith / movies / events.
+
+![Container — CinemaAbyss (To-Be)](docs/c4/02-container-to-be.svg)
+
+Исходник: [docs/c4/02-container-to-be.puml](docs/c4/02-container-to-be.puml) · As-Is Context: [docs/c4/01-context-as-is.puml](docs/c4/01-context-as-is.puml)
+
+---
+
 ## Обзор.
  В проекте реализована следующая функциональность:
 
@@ -68,8 +88,11 @@ GitHub Actions для непрерывной интеграции и разве�
 
 - Сборка и тестирование микросервисов
 - Сборка и выгрузка Docker-образов
+- Сборка C4-схем: `docs/**/*.puml` → SVG рядом, коммит в git ([`.github/workflows/plantuml.yml`](.github/workflows/plantuml.yml))
 
 Расположены в .github/workflows/.
+
+Исходники схем — `docs/c4/*.puml`. Картинку собирает Actions и кладёт рядом: `docs/c4/*.svg`.
 
 
 ## Детали реализации

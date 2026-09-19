@@ -1,0 +1,70 @@
+# По уроку «GitHub Actions PlantUML»: из .puml собираем схемы и коммитим в git.
+# SVG вместо PNG, коммит только при push (не ломаем PR).
+name: PlantUML Diagrams
+
+on:
+  push:
+    paths:
+      - "docs/**/*.puml"
+      - ".github/workflows/plantuml.yml"
+  pull_request:
+    paths:
+      - "docs/**/*.puml"
+      - ".github/workflows/plantuml.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-diagrams:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+
+      - name: Install Graphviz
+        run: sudo apt-get update && sudo apt-get install -y graphviz
+
+      - name: Download PlantUML
+        run: |
+          curl -fsSL -o /tmp/plantuml.jar \
+            https://github.com/plantuml/plantuml/releases/latest/download/plantuml.jar
+          java -jar /tmp/plantuml.jar -version
+
+      - name: Generate diagrams
+        run: |
+          set -euo pipefail
+          find docs -name '*.puml' -print0 | sort -z | while IFS= read -r -d '' file; do
+            echo "render $file"
+            java -jar /tmp/plantuml.jar -tsvg "$file"
+          done
+
+      - name: Upload diagrams
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: plantuml-diagrams
+          path: docs/**/*.svg
+          if-no-files-found: warn
+
+      - name: Commit diagrams
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          find docs -name '*.svg' -exec git add {} +
+          if git diff --cached --quiet; then
+            echo "No diagram changes"
+          else
+            git commit -m "docs: generate PlantUML diagrams [skip ci]"
+            git push
+          fi
