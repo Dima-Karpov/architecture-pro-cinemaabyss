@@ -6,10 +6,13 @@
 Результат представьте в виде контейнерной диаграммы в нотации С4.
 Добавьте ссылку на файл в этот шаблон
 
-- [docs/c4/02-container-to-be.puml](docs/c4/02-container-to-be.puml) — C4 Container To-Be
-- [docs/domains-as-is-to-be.md](docs/domains-as-is-to-be.md) — домены, bounded contexts, интеграция
+**C4 Container To-Be:** [docs/c4/02-container-to-be.puml](docs/c4/02-container-to-be.puml)
 
-To-Be: **proxy-service** — единая точка входа для web / mobile / Smart TV; **movies-service** — первый вынесенный домен (Strangler Fig); **monolith** — users, payments, subscriptions, скидки (bounded contexts внутри одного процесса); **events-service** + **Kafka** — ingestion и шина доменных событий. Sync — HTTP через proxy; async — Kafka. Payments и subscriptions пока в monolith, не отдельные микросервисы. Auth: login/JWT в monolith (users), проверка token на proxy.
+Кратко по схеме:
+
+- **Домены:** users + authn, movies, payments, subscriptions, discounts — в monolith как bounded contexts; movies вынесен в **movies-service** (Strangler Fig); domain events — **events-service** + **Kafka**; рекомендации — внешняя система.
+- **Единая точка вызова:** **proxy-service** (`:8000`) — web / mobile / Smart TV → API Gateway.
+- **Интеграция:** sync — HTTP через proxy; async — Kafka (события между доменами, notifications, Recommendations).
 
 
 ## Задание 2
