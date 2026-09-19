@@ -162,7 +162,7 @@ Auth **есть на схеме** — но не отдельным box, а по�
 | Роль Redis | Отличие от Kafka |
 | --- | --- |
 | Token bucket rate limiting на proxy | счётчики, не доменные события |
-| Pub/Sub `user:{id}` → WebSocket | колокольчик можно потерять; при открытии app подтянет из Postgres |
+| Pub/Sub `user:{id}` → proxy → WebSocket → Web | колокольчик можно потерять; при открытии app подтянет из Postgres. **Redis не ходит в браузер напрямую** — proxy подписан на канал и пушит в открытый WebSocket |
 
 Kafka остаётся для `MovieCreated`, outbox, DLQ и события после успешной Saga (`SubscriptionActivated` → notifications).
 

@@ -3,42 +3,67 @@
 
 title Container — CinemaAbyss (To-Be)
 
-LAYOUT_WITH_LEGEND()
+LAYOUT_TOP_DOWN()
+HIDE_STEREOTYPE()
+
+skinparam nodesep 45
+skinparam ranksep 55
+skinparam wrapWidth 200
+
+AddElementTag("extension", $bgColor="#FFF3CD", $fontColor="#3D3200", $borderColor="#C9A227", $legendText="расширение / future")
+AddRelTag("extension", $textColor="#8A6D00", $lineColor="#C9A227", $lineStyle=DashedLine(), $legendText="future / расширение")
 
 Person(user, "Пользователь", "Смотрит каталог, оформляет подписку, получает уведомления")
 
 System_Boundary(eco, "Экосистема «Кинобездна»") {
+
+  ' ── 1. Клиенты ──
   Container_Boundary(clients, "Клиенты") {
-    Container(smarttv, "SmartTV", "TV app", "Приложение для Smart TV")
-    Container(mobile, "Mobile", "iOS / Android", "Мобильное приложение")
     Container(web, "Web", "SPA / browser", "Веб-клиент")
+    Container(mobile, "Mobile", "iOS / Android", "Мобильное приложение")
+    Container(smarttv, "SmartTV", "TV app", "Приложение для Smart TV")
   }
 
+  ' ── 2. Gateway ──
   Container(proxy, "proxy-service", "Go :8000", "API Gateway. Единая точка входа. Strangler Fig (MOVIES_MIGRATION_PERCENT)")
 
-  Container_Boundary(monolithCtx, "Monolith — bounded contexts") {
-    Container(monolith, "monolith", "Go :8080", "users · payments · subscriptions · discounts")
+  ' ── 3. Sync-сервисы (один ряд) ──
+  Container_Boundary(services, "Сервисы") {
+    Container(orchestrator, "billing-orchestrator", "Go", "Saga: charge payment → activate subscription → notify", $tags="extension")
+    Container(events, "events-service", "Go :8082", "REST ingestion User / Payment / Movie events → Kafka")
+    Container_Boundary(monolithCtx, "Monolith — bounded contexts") {
+      Container(monolith, "monolith", "Go :8080", "users · payments · subscriptions · discounts")
+    }
+    Container(movies, "movies-service", "Go :8081", "Метаданные фильмов, жанры, рейтинги каталога")
   }
 
-  Container(movies, "movies-service", "Go :8081", "Метаданные фильмов, жанры, рейтинги каталога")
-  Container(events, "events-service", "Go :8082", "REST ingestion User / Payment / Movie events → Kafka")
-
-  Container(orchestrator, "billing-orchestrator", "Go", "Saga: charge payment → activate subscription → notify")
-  ContainerDb(pgOrch, "pg-orchestrator", "PostgreSQL", "saga_id, step, status, compensation log")
-
-  Container(notif, "notifications-service", "Go", "Kafka consumer, inbox, delivery worker")
-  ContainerDb(pgNotif, "pg-notifications", "PostgreSQL", "inbox, delivery outbox, DLQ metadata")
-
-  ContainerDb(pg, "PostgreSQL", "PostgreSQL", "cinemaabyss — monolith и movies делят схему; далее db-per-service")
+  ' ── 4. Брокер ──
   ContainerQueue(kafka, "Kafka", "message broker", "movie-events, user-events, payment-events")
-  Container(redis, "Redis", "Redis", "rate limit counters + Pub/Sub realtime")
+
+  ' ── 5. Хранилища ──
+  Container_Boundary(storage, "Хранилище") {
+    ContainerDb(pgOrch, "pg-orchestrator", "PostgreSQL", "saga_id, step, status, compensation log", $tags="extension")
+    ContainerDb(pg, "PostgreSQL", "PostgreSQL", "cinemaabyss — monolith и movies делят схему; далее db-per-service")
+    ContainerDb(pgNotif, "pg-notifications", "PostgreSQL", "inbox, delivery outbox, DLQ metadata", $tags="extension")
+  }
+
+  ' ── 6. Async / расширения ──
+  Container_Boundary(async, "Async / расширения") {
+    Container(notif, "notifications-service", "Go", "Kafka consumer, inbox, delivery worker", $tags="extension")
+    Container(redis, "Redis", "Redis", "rate limit counters + Pub/Sub realtime", $tags="extension")
+  }
 }
 
+' ── 7. Внешние системы ──
 System_Ext(reco, "Recommendations", "Внешняя рекомендательная система (async, кейс)")
-System_Ext(push, "Push Gateway", "FCM / APNs")
-System_Ext(email, "Email Provider", "SendGrid / SES")
-System_Ext(sms, "SMS Provider", "опционально, future")
 
+System_Boundary(delivery, "Доставка уведомлений") {
+  System_Ext(push, "Push Gateway", "FCM / APNs")
+  System_Ext(email, "Email Provider", "SendGrid / SES")
+  System_Ext(sms, "SMS Provider", "опционально, future", $tags="extension")
+}
+
+' ═══ Связи: клиенты ═══
 Rel(user, web, "Использует", "HTTPS")
 Rel(user, mobile, "Использует", "HTTPS")
 Rel(user, smarttv, "Использует", "HTTPS")
@@ -47,34 +72,62 @@ Rel(web, proxy, "REST API", "HTTPS JSON sync")
 Rel(mobile, proxy, "REST API", "HTTPS JSON sync")
 Rel(smarttv, proxy, "REST API", "HTTPS JSON sync")
 
+' ═══ Связи: proxy → сервисы ═══
+Rel(proxy, orchestrator, "POST purchase subscription", "HTTP JSON sync", $tags="extension")
+Rel(proxy, events, "/api/events/* ingestion", "HTTP JSON sync")
 Rel(proxy, monolith, "/api/auth/*, /api/users, /api/payments, /api/subscriptions", "HTTP JSON sync")
 Rel(proxy, movies, "/api/movies, Strangler %", "HTTP JSON sync")
-Rel(proxy, events, "/api/events/* ingestion", "HTTP JSON sync")
-Rel(proxy, orchestrator, "POST purchase subscription", "HTTP JSON sync")
+Rel(proxy, redis, "rate limit counters", "sync", $tags="extension")
 
-Rel(orchestrator, pgOrch, "persist saga state", "SQL sync")
-Rel(orchestrator, monolith, "1 charge · 2 activate", "HTTP JSON sync")
-Rel(orchestrator, kafka, "3 SubscriptionActivated", "async produce")
+' ═══ Связи: orchestrator ═══
+Rel(orchestrator, pgOrch, "persist saga state", "SQL sync", $tags="extension")
+Rel(orchestrator, monolith, "1 charge · 2 activate", "HTTP JSON sync", $tags="extension")
+Rel(orchestrator, kafka, "3 SubscriptionActivated", "async produce", $tags="extension")
 
+' ═══ Связи: данные ═══
 Rel(monolith, pg, "users, payments, subscriptions", "SQL sync")
 Rel(movies, pg, "movies, movie_genres", "SQL sync")
 
+' ═══ Связи: события ═══
 Rel(movies, kafka, "MovieCreated, MovieRated", "async produce")
-Rel(monolith, kafka, "user / payment events", "async produce (future / via events API)")
+Rel(monolith, kafka, "user / payment events", "async produce (future / via events API)", $tags="extension")
 Rel(events, kafka, "domain events", "async produce")
 
-Rel(kafka, notif, "movie-events, user-events, payment-events", "async consume")
+' ═══ Связи: async контур ═══
+Rel(kafka, notif, "movie-events, user-events, payment-events", "async consume", $tags="extension")
 Rel(kafka, reco, "consume events", "async, future", $tags="extension")
 
-Rel(notif, pgNotif, "inbox, delivery jobs, DLQ", "SQL sync")
-Rel(notif, push, "send push", "HTTP sync + retry")
-Rel(notif, email, "send email", "HTTP sync + retry")
+Rel(notif, pgNotif, "inbox, delivery jobs, DLQ", "SQL sync", $tags="extension")
+Rel(notif, push, "send push", "HTTP sync + retry", $tags="extension")
+Rel(notif, email, "send email", "HTTP sync + retry", $tags="extension")
 Rel(notif, sms, "send SMS", "HTTP sync + retry, future", $tags="extension")
+Rel(notif, redis, "Pub/Sub user:{id}", "sync", $tags="extension")
 
-Rel(proxy, redis, "rate limit counters", "sync")
-Rel(notif, redis, "Pub/Sub user:{id}", "sync")
-Rel(redis, web, "WebSocket fanout «бам»", "async, future", $tags="extension")
+' ═══ Раскладка: ряды сверху вниз ═══
+Lay_R(web, mobile)
+Lay_R(mobile, smarttv)
 
+Lay_D(clients, proxy)
+
+Lay_R(orchestrator, events)
+Lay_R(events, monolith)
+Lay_R(monolith, movies)
+
+Lay_D(services, kafka)
+Lay_D(kafka, pg)
+
+Lay_R(pgOrch, pg)
+Lay_R(pg, pgNotif)
+
+Lay_R(kafka, notif)
+Lay_R(notif, redis)
+
+Lay_R(notif, delivery)
+Lay_R(push, email)
+Lay_R(email, sms)
+Lay_R(kafka, reco)
+
+' ═══ Notes: по сторонам, чтобы не кучковались справа ═══
 note right of proxy
   **authz (не auth-service!):**
   validate JWT до маршрутизации
@@ -101,36 +154,39 @@ note right of monolith
   отдельный auth-service — не планируем
 end note
 
-note right of movies
+note bottom of movies
   первый вынесенный сервис (Strangler)
   **Demetra #7:** transactional outbox
   → Kafka movie-events
 end note
 
-note right of events
+note bottom of events
   REST ingestion (задание 2)
   producer в Kafka
 end note
 
-note right of orchestrator
+note bottom of orchestrator
   **расширение / Demetra #12 Saga**
   payment → subscription → notify
   компенсации в одном месте
   notify — только async через Kafka
 end note
 
-note right of notif
+note left of notif
   **расширение**
   не принимает запросы пользователя
   **Demetra:** inbox, delivery outbox,
   retry + jitter, breaker per provider, DLQ
 end note
 
-note right of redis
+note left of redis
   **расширение / Demetra #11**
   не дублирует Kafka:
   эфемерное realtime vs
   обязательная доставка событий
+  ----
+  in-app «бам» → proxy WebSocket
+  (не напрямую Redis → Web)
 end note
 
 note bottom of pg
@@ -140,9 +196,6 @@ note bottom of pg
   aspirational: pg-orchestrator,
   pg-notifications — отдельные БД
 end note
-
-Lay_R(smarttv, mobile)
-Lay_R(mobile, web)
 
 SHOW_LEGEND()
 @enduml
