@@ -365,6 +365,10 @@ cat .docker/config.json | base64
 
 ![Postman kubernetes — events + proxy](docs/screenshots/assignment-3/k8s-postman-kubernetes-events-proxy.png)
 
+**Логи events-service (обработка событий из Kafka):**
+
+![events-service logs](docs/screenshots/assignment-3/k8s-events-logs.png)
+
 
 ## Задание 4
 Для простоты дальнейшего обновления и развертывания вам как архитектуру необходимо так же реализовать helm-чарты для прокси-сервиса и проверить работу 
