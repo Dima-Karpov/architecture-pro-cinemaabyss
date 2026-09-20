@@ -1,0 +1,349 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "POST endpoints for movie, user, and payment events (Kafka ingestion).",
+        "title": "CinemaAbyss Events Service API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8082",
+    "basePath": "/",
+    "paths": {
+        "/api/events/movie": {
+            "post": {
+                "description": "Регистрирует новое событие, связанное с фильмом",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Создание события фильма",
+                "parameters": [
+                    {
+                        "description": "Данные события фильма",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.MovieEventPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/models.MovieEventResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/events/payment": {
+            "post": {
+                "description": "Регистрирует новое событие, связанное с платежом",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Создание события платежа",
+                "parameters": [
+                    {
+                        "description": "Данные события платежа",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.PaymentEventPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/models.PaymentEventResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/events/user": {
+            "post": {
+                "description": "Регистрирует новое событие, связанное с пользователем",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Создание события пользователя",
+                "parameters": [
+                    {
+                        "description": "Данные события пользователя",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.UserEventPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/models.UserEventResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "models.MovieEvent": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "payload": {
+                    "$ref": "#/definitions/models.MovieEventPayload"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.MovieEventPayload": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "genres": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "movie_id": {
+                    "type": "integer"
+                },
+                "rating": {
+                    "type": "number"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.MovieEventResponse": {
+            "type": "object",
+            "properties": {
+                "event": {
+                    "$ref": "#/definitions/models.MovieEvent"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "partition": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.PaymentEvent": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "payload": {
+                    "$ref": "#/definitions/models.PaymentEventPayload"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.PaymentEventPayload": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "method_type": {
+                    "type": "string"
+                },
+                "payment_id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.PaymentEventResponse": {
+            "type": "object",
+            "properties": {
+                "event": {
+                    "$ref": "#/definitions/models.PaymentEvent"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "partition": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.UserEvent": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "payload": {
+                    "$ref": "#/definitions/models.UserEventPayload"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.UserEventPayload": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.UserEventResponse": {
+            "type": "object",
+            "properties": {
+                "event": {
+                    "$ref": "#/definitions/models.UserEvent"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "partition": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "responses.Error": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "responses.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/responses.Error"
+                    }
+                }
+            }
+        }
+    }
+}

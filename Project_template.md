@@ -66,6 +66,50 @@
 Необходимые тесты для проверки этого API вызываются при запуске npm run test:local из папки tests/postman 
 Приложите скриншот тестов и скриншот состояния топиков Kafka http://localhost:8090 
 
+### Решение
+
+#### 1. Proxy (`src/microservices/proxy/`)
+
+- Реализация: Go, `httputil.ReverseProxy`, Strangler Fig по `MOVIES_MIGRATION_PERCENT`
+- ADR: [docs/adr/0004-strangler-fig-proxy.md](docs/adr/0004-strangler-fig-proxy.md)
+- Запуск и тесты: `make up` → `make test-api`
+
+#### 2. Events + Kafka (`src/microservices/events/`)
+
+- Реализация: Go, `segmentio/kafka-go`, producer + consumer в одном процессе
+- API: `POST /api/events/movie|user|payment` → Kafka → consumer → log
+- Типизированные модели: `MovieEvent` / `UserEvent` / `PaymentEvent` (без `any`)
+- Топики: `movie-events`, `user-events`, `payment-events`
+- Проверка: `make lint events` → `make test-api`
+
+**Postman — все тесты зелёные** (22 requests, 42 assertions, 0 failures):
+
+| Сервис | Статус |
+| --- | --- |
+| Monolith | ✅ |
+| Movies Microservice | ✅ |
+| Events Microservice | ✅ |
+| Proxy Service | ✅ |
+
+![Postman — итог: 0 failures](docs/screenshots/assignment-2/postman-part2-all-green.png)
+
+![Postman — Monolith](docs/screenshots/assignment-2/postman-part2-monolith.png)
+
+![Postman — Movies](docs/screenshots/assignment-2/postman-part2-movies.png)
+
+![Postman — Events + Proxy](docs/screenshots/assignment-2/postman-part2-events-proxy.png)
+
+**Kafka UI** ([http://localhost:8090](http://localhost:8090)):
+
+![Kafka — список топиков](docs/screenshots/assignment-2/kafka-ui-topics.png)
+
+![Kafka — movie-events (2 messages)](docs/screenshots/assignment-2/kafka-ui-movie-events.png)
+
+![Kafka — user-events (2 messages)](docs/screenshots/assignment-2/kafka-ui-user-events.png)
+
+![Kafka — payment-events (2 messages)](docs/screenshots/assignment-2/kafka-ui-payment-events.png)
+
+![Kafka — consumer group events-service, lag 0](docs/screenshots/assignment-2/kafka-ui-consumers.png)
 
 ## Задание 3
 

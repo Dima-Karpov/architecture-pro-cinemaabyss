@@ -1,0 +1,109 @@
+version: "2"
+run:
+  tests: false
+linters:
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - cyclop
+    - decorder
+    - dogsled
+    - dupword
+    - durationcheck
+    - err113
+    - errcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - forbidigo
+    - forcetypeassert
+    - funlen
+    - gochecknoglobals
+    - gochecknoinits
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - gomoddirectives
+    - goprintffuncname
+    - gosec
+    - govet
+    - grouper
+    - ineffassign
+    - interfacebloat
+    - ireturn
+    - lll
+    - loggercheck
+    - maintidx
+    - makezero
+    - misspell
+    - mnd
+    - nakedret
+    - nestif
+    - nilerr
+    - nlreturn
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - prealloc
+    - predeclared
+    - reassign
+    - revive
+    - staticcheck
+    - tagliatelle
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - whitespace
+    - wsl_v5
+  settings:
+    gosec:
+      excludes:
+        - G404
+    gomoddirectives:
+      replace-allow-list:
+        - golang.org/x/crypto
+        - golang.org/x/net
+    govet:
+      enable:
+        - fieldalignment
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    revive:
+      rules:
+        - name: var-naming
+          disabled: true
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+        use-field-name: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - docs$
+formatters:
+  enable:
+    - gci
+    - gofmt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/cinemaabyss/microservices/events)
