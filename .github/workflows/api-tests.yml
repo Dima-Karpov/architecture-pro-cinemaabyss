@@ -35,7 +35,9 @@ jobs:
       
       - name: Start services with Docker Compose
         run: |
-          docker compose up -d --build --wait
+          docker compose up -d --build
+          chmod +x scripts/ci-wait-for-services.sh
+          ./scripts/ci-wait-for-services.sh
       
       - name: Set up Node.js
         uses: actions/setup-node@v3

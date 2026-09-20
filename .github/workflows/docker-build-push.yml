@@ -7,6 +7,7 @@ on:
     paths:
       - 'src/**'
       - 'docker-compose.yml'
+      - 'scripts/ci-wait-for-services.sh'
       - '.github/workflows/docker-build-push.yml'
   release:
     types: [published]
@@ -138,7 +139,9 @@ jobs:
 
       - name: Start services with Docker Compose
         run: |
-          docker compose up -d --build --wait
+          docker compose up -d --build
+          chmod +x scripts/ci-wait-for-services.sh
+          ./scripts/ci-wait-for-services.sh
 
       - name: Set up Node.js
         uses: actions/setup-node@v3

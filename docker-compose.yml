@@ -46,11 +46,11 @@ services:
       KAFKA_CREATE_TOPICS: "movie-events:1:1,user-events:1:1,payment-events:1:1"
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9092' || exit 1"]
       interval: 10s
-      timeout: 10s
-      retries: 12
-      start_period: 40s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
@@ -111,8 +111,7 @@ services:
       dockerfile: Dockerfile
     container_name: cinemaabyss-events-service
     depends_on:
-      kafka:
-        condition: service_healthy
+      - kafka
     restart: on-failure
     ports:
       - "8082:8082"
@@ -123,8 +122,8 @@ services:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8082/api/events/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 12
-      start_period: 30s
+      retries: 18
+      start_period: 45s
     networks:
       - cinemaabyss-network
 
@@ -135,12 +134,9 @@ services:
       dockerfile: Dockerfile
     container_name: cinemaabyss-proxy-service
     depends_on:
-      monolith:
-        condition: service_healthy
-      movies-service:
-        condition: service_healthy
-      events-service:
-        condition: service_healthy
+      - monolith
+      - movies-service
+      - events-service
     ports:
       - "8000:8000"
     healthcheck:
