@@ -1,8 +1,11 @@
-.PHONY: lint build run swag up down test-api lint-microservices build-microservices help
+.PHONY: lint build run swag up down test-api lint-microservices build-microservices \
+	k8s-deploy k8s-status k8s-ingress k8s-restart test-api-kubernetes help
 
 ROOT := $(CURDIR)
 MICROSERVICES := proxy events
 GOLANGCI_LINT_IMAGE := golangci/golangci-lint:v2.6.2
+K8S_DIR := src/kubernetes
+K8S_NS := cinemaabyss
 
 ifeq (lint,$(firstword $(MAKECMDGOALS)))
   SERVICE_GOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
@@ -35,6 +38,11 @@ help:
 	@echo "  make up                            docker compose up -d --build"
 	@echo "  make down                          docker compose down"
 	@echo "  make test-api                      Run Postman tests (local environment)"
+	@echo "  make k8s-deploy                    Deploy stack to minikube (ordered apply)"
+	@echo "  make k8s-status                    kubectl get pod,svc,ingress in cinemaabyss"
+	@echo "  make k8s-ingress                   Enable minikube ingress + apply ingress.yaml"
+	@echo "  make k8s-restart                   Delete all pods (recreate with new images)"
+	@echo "  make test-api-kubernetes           Postman tests against cinemaabyss.example.com"
 
 lint:
 	@test -n "$(SERVICE_GOALS)" || (echo "usage: make lint <service> [service...]"; exit 1)
@@ -123,3 +131,34 @@ down:
 
 test-api:
 	cd tests/postman && npm run test:local
+
+k8s-deploy:
+	kubectl apply -f $(K8S_DIR)/namespace.yaml
+	kubectl apply -f $(K8S_DIR)/configmap.yaml
+	kubectl apply -f $(K8S_DIR)/secret.yaml
+	kubectl apply -f $(K8S_DIR)/dockerconfigsecret.yaml
+	kubectl apply -f $(K8S_DIR)/postgres-init-configmap.yaml
+	kubectl apply -f $(K8S_DIR)/postgres.yaml
+	@echo "Waiting for postgres..."
+	kubectl -n $(K8S_NS) wait --for=condition=ready pod/postgres-0 --timeout=180s
+	kubectl apply -f $(K8S_DIR)/kafka/kafka.yaml
+	@echo "Waiting for kafka and zookeeper..."
+	kubectl -n $(K8S_NS) wait --for=condition=ready pod/zookeeper-0 --timeout=300s
+	kubectl -n $(K8S_NS) wait --for=condition=ready pod/kafka-0 --timeout=300s
+	kubectl apply -f $(K8S_DIR)/monolith.yaml
+	kubectl apply -f $(K8S_DIR)/movies-service.yaml
+	kubectl apply -f $(K8S_DIR)/events-service.yaml
+	kubectl apply -f $(K8S_DIR)/proxy-service.yaml
+
+k8s-status:
+	kubectl -n $(K8S_NS) get pod,svc,ingress
+
+k8s-ingress:
+	minikube addons enable ingress
+	kubectl apply -f $(K8S_DIR)/ingress.yaml
+
+k8s-restart:
+	kubectl -n $(K8S_NS) delete pod --all
+
+test-api-kubernetes:
+	cd tests/postman && npm run test:kubernetes

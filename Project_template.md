@@ -323,7 +323,28 @@ cat .docker/config.json | base64
   Откройте логи event-service и сделайте скриншот обработки событий
 
 #### Шаг 3
-Добавьте сюда скриншота вывода при вызове https://cinemaabyss.example.com/api/movies и  скриншот вывода event-service после вызова тестов.
+
+### Решение
+
+#### 1. CI/CD (`.github/workflows/docker-build-push.yml`)
+
+- Триггер: push в `main` и `cinema` (paths: `src/**`, workflow)
+- Build + push в GHCR: `monolith`, `movies-service`, `events-service`, `proxy-service`
+- Job `api-tests` после сборки: `docker compose up --build` → Newman (docker env)
+
+#### 2. Kubernetes
+
+- Манифесты: `events-service.yaml`, `proxy-service.yaml` (Deployment + Service)
+- Ingress: `/` → `proxy-service:80`, `/api/events` → `events-service:8082`
+- ConfigMap: `EVENTS_SERVICE_URL`, `KAFKA_BROKERS`, `MOVIES_MIGRATION_PERCENT` (Strangler Fig)
+- Образы: `ghcr.io/dima-karpov/architecture-pro-cinemaabyss/*:latest`
+- Деплой: `make k8s-deploy` → `make k8s-ingress` → `/etc/hosts` → `minikube tunnel`
+
+#### 3. Скриншоты
+
+![curl /api/movies](docs/screenshots/assignment-3/k8s-movies-api.png)
+
+![events-service logs](docs/screenshots/assignment-3/k8s-events-logs.png)
 
 
 ## Задание 4
