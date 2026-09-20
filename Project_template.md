@@ -331,6 +331,7 @@ cat .docker/config.json | base64
 - Триггер: push в `main` и `cinema` (paths: `src/**`, workflow)
 - Build + push в GHCR: `monolith`, `movies-service`, `events-service`, `proxy-service`
 - Job `api-tests` после сборки: `docker compose up --build` → Newman (docker env)
+- Результат: зелёная сборка в GitHub Actions, 4 образа в GHCR
 
 #### 2. Kubernetes
 
@@ -340,11 +341,29 @@ cat .docker/config.json | base64
 - Образы: `ghcr.io/dima-karpov/architecture-pro-cinemaabyss/*:latest`
 - Деплой: `make k8s-deploy` → `make k8s-ingress` → `/etc/hosts` → `minikube tunnel`
 
-#### 3. Скриншоты
+**Локально на Mac (OrbStack + minikube):** образы собираются через `docker --context orbstack build`, загружаются в minikube (`minikube image load`). Для локальной проверки `imagePullPolicy` временно меняется на `IfNotPresent` (в git остаётся `Always`).
+
+#### 3. Проверка
+
+- `curl http://cinemaabyss.example.com/api/movies` — список фильмов через Ingress → proxy
+- `make test-api-kubernetes` — **22 requests, 42 assertions, 0 failures**
+- Логи events-service: `kubectl -n cinemaabyss logs -l app=events-service --tail=20` — обработка movie/user/payment events из Kafka
+
+#### 4. Скриншоты
+
+**curl /api/movies через Ingress:**
 
 ![curl /api/movies](docs/screenshots/assignment-3/k8s-movies-api.png)
 
-![events-service logs](docs/screenshots/assignment-3/k8s-events-logs.png)
+**Postman `test:kubernetes` — итог (0 failures):**
+
+![Postman kubernetes — summary](docs/screenshots/assignment-3/k8s-postman-kubernetes.png)
+
+![Postman kubernetes — monolith](docs/screenshots/assignment-3/k8s-postman-kubernetes-monolith.png)
+
+![Postman kubernetes — movies](docs/screenshots/assignment-3/k8s-postman-kubernetes-movies.png)
+
+![Postman kubernetes — events + proxy](docs/screenshots/assignment-3/k8s-postman-kubernetes-events-proxy.png)
 
 
 ## Задание 4
