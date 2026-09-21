@@ -444,6 +444,44 @@ minikube tunnel
 https://cinemaabyss.example.com/api/movies
 и приложите скриншот развертывания helm и вывода https://cinemaabyss.example.com/api/movies
 
+### Решение
+
+#### 1. Helm-чарт (`src/kubernetes/helm/`)
+
+- `values.yaml` — образы `ghcr.io/dima-karpov/architecture-pro-cinemaabyss/*:latest`, `imagePullSecrets` из `src/kubernetes/dockerconfigsecret.yaml`
+- `templates/services/proxy-service.yaml` — Deployment + Service (по `src/kubernetes/proxy-service.yaml`)
+- `templates/services/events-service.yaml` — Deployment + Service (по `src/kubernetes/events-service.yaml`)
+- `templates/configmap.yaml` — `MOVIES_SERVICE_URL=http://movies-service:8081`, `EVENTS_SERVICE_URL`, `KAFKA_BROKERS`
+
+#### 2. Установка
+
+```bash
+kubectl delete all --all -n cinemaabyss
+kubectl delete namespace cinemaabyss
+helm install cinemaabyss ./src/kubernetes/helm --namespace cinemaabyss --create-namespace
+```
+
+**Локально на Mac:** `minikube image load` для 4 образов + patch `imagePullPolicy: IfNotPresent` (в git остаётся `Always`).
+
+#### 3. Проверка
+
+- `kubectl get pods -n cinemaabyss` — 7 подов `1/1 Running`
+- `minikube tunnel` → `curl http://cinemaabyss.example.com/api/movies` — JSON со списком фильмов
+
+#### 4. Скриншоты
+
+**`helm list` — релиз deployed:**
+
+![helm list deployed](docs/screenshots/assignment-4/helm-list-deployed.png)
+
+**`kubectl get pods` — 7 Running:**
+
+![kubectl get pods — 7 Running](docs/screenshots/assignment-4/helm-pods.png)
+
+**curl /api/movies через Ingress:**
+
+![curl /api/movies](docs/screenshots/assignment-4/helm-movies-api.png)
+
 
 # Задание 5
 Компания планирует активно развиваться и для повышения надежности, безопасности, реализации сетевых паттернов типа Circuit Breaker и канареечного деплоя вам как архитектору необходимо развернуть istio и настроить circuit breaker для monolith и movies сервисов.
