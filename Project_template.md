@@ -5,7 +5,14 @@
 1. Спроектируйте to be архитектуру КиноБездны, разделив всю систему на отдельные домены и организовав интеграционное взаимодействие и единую точку вызова сервисов.
 Результат представьте в виде контейнерной диаграммы в нотации С4.
 Добавьте ссылку на файл в этот шаблон
-[ссылка на файл](ссылка)
+
+**C4 Container To-Be:** [docs/c4/02-container-to-be.puml](docs/c4/02-container-to-be.puml)
+
+Кратко по схеме:
+
+- **Домены:** users + authn, movies, payments, subscriptions, discounts — в monolith как bounded contexts; movies вынесен в **movies-service** (Strangler Fig); domain events — **events-service** + **Kafka**; рекомендации — внешняя система.
+- **Единая точка вызова:** **proxy-service** (`:8000`) — web / mobile / Smart TV → API Gateway.
+- **Интеграция:** sync — HTTP через proxy; async — Kafka (события между доменами, notifications, Recommendations).
 
 
 ## Задание 2
@@ -59,6 +66,50 @@
 Необходимые тесты для проверки этого API вызываются при запуске npm run test:local из папки tests/postman 
 Приложите скриншот тестов и скриншот состояния топиков Kafka http://localhost:8090 
 
+### Решение
+
+#### 1. Proxy (`src/microservices/proxy/`)
+
+- Реализация: Go, `httputil.ReverseProxy`, Strangler Fig по `MOVIES_MIGRATION_PERCENT`
+- ADR: [docs/adr/0004-strangler-fig-proxy.md](docs/adr/0004-strangler-fig-proxy.md)
+- Запуск и тесты: `make up` → `make test-api`
+
+#### 2. Events + Kafka (`src/microservices/events/`)
+
+- Реализация: Go, `segmentio/kafka-go`, producer + consumer в одном процессе
+- API: `POST /api/events/movie|user|payment` → Kafka → consumer → log
+- Типизированные модели: `MovieEvent` / `UserEvent` / `PaymentEvent` (без `any`)
+- Топики: `movie-events`, `user-events`, `payment-events`
+- Проверка: `make lint events` → `make test-api`
+
+**Postman — все тесты зелёные** (22 requests, 42 assertions, 0 failures):
+
+| Сервис | Статус |
+| --- | --- |
+| Monolith | ✅ |
+| Movies Microservice | ✅ |
+| Events Microservice | ✅ |
+| Proxy Service | ✅ |
+
+![Postman — итог: 0 failures](docs/screenshots/assignment-2/postman-part2-all-green.png)
+
+![Postman — Monolith](docs/screenshots/assignment-2/postman-part2-monolith.png)
+
+![Postman — Movies](docs/screenshots/assignment-2/postman-part2-movies.png)
+
+![Postman — Events + Proxy](docs/screenshots/assignment-2/postman-part2-events-proxy.png)
+
+**Kafka UI** ([http://localhost:8090](http://localhost:8090)):
+
+![Kafka — список топиков](docs/screenshots/assignment-2/kafka-ui-topics.png)
+
+![Kafka — movie-events (2 messages)](docs/screenshots/assignment-2/kafka-ui-movie-events.png)
+
+![Kafka — user-events (2 messages)](docs/screenshots/assignment-2/kafka-ui-user-events.png)
+
+![Kafka — payment-events (2 messages)](docs/screenshots/assignment-2/kafka-ui-payment-events.png)
+
+![Kafka — consumer group events-service, lag 0](docs/screenshots/assignment-2/kafka-ui-consumers.png)
 
 ## Задание 3
 
@@ -272,7 +323,51 @@ cat .docker/config.json | base64
   Откройте логи event-service и сделайте скриншот обработки событий
 
 #### Шаг 3
-Добавьте сюда скриншота вывода при вызове https://cinemaabyss.example.com/api/movies и  скриншот вывода event-service после вызова тестов.
+
+### Решение
+
+#### 1. CI/CD (`.github/workflows/docker-build-push.yml`)
+
+- Триггер: push в `main` и `cinema` (paths: `src/**`, workflow)
+- Build + push в GHCR: `monolith`, `movies-service`, `events-service`, `proxy-service`
+- Job `api-tests` после сборки: `docker compose up --build` → Newman (docker env)
+- Результат: зелёная сборка в GitHub Actions, 4 образа в GHCR
+
+#### 2. Kubernetes
+
+- Манифесты: `events-service.yaml`, `proxy-service.yaml` (Deployment + Service)
+- Ingress: `/` → `proxy-service:80`, `/api/events` → `events-service:8082`
+- ConfigMap: `EVENTS_SERVICE_URL`, `KAFKA_BROKERS`, `MOVIES_MIGRATION_PERCENT` (Strangler Fig)
+- Образы: `ghcr.io/dima-karpov/architecture-pro-cinemaabyss/*:latest`
+- Деплой: `make k8s-deploy` → `make k8s-ingress` → `/etc/hosts` → `minikube tunnel`
+
+**Локально на Mac (OrbStack + minikube):** образы собираются через `docker --context orbstack build`, загружаются в minikube (`minikube image load`). Для локальной проверки `imagePullPolicy` временно меняется на `IfNotPresent` (в git остаётся `Always`).
+
+#### 3. Проверка
+
+- `curl http://cinemaabyss.example.com/api/movies` — список фильмов через Ingress → proxy
+- `make test-api-kubernetes` — **22 requests, 42 assertions, 0 failures**
+- Логи events-service: `kubectl -n cinemaabyss logs -l app=events-service --tail=20` — обработка movie/user/payment events из Kafka
+
+#### 4. Скриншоты
+
+**curl /api/movies через Ingress:**
+
+![curl /api/movies](docs/screenshots/assignment-3/k8s-movies-api.png)
+
+**Postman `test:kubernetes` — итог (0 failures):**
+
+![Postman kubernetes — summary](docs/screenshots/assignment-3/k8s-postman-kubernetes.png)
+
+![Postman kubernetes — monolith](docs/screenshots/assignment-3/k8s-postman-kubernetes-monolith.png)
+
+![Postman kubernetes — movies](docs/screenshots/assignment-3/k8s-postman-kubernetes-movies.png)
+
+![Postman kubernetes — events + proxy](docs/screenshots/assignment-3/k8s-postman-kubernetes-events-proxy.png)
+
+**Логи events-service (обработка событий из Kafka):**
+
+![events-service logs](docs/screenshots/assignment-3/k8s-events-logs.png)
 
 
 ## Задание 4
@@ -349,6 +444,44 @@ minikube tunnel
 https://cinemaabyss.example.com/api/movies
 и приложите скриншот развертывания helm и вывода https://cinemaabyss.example.com/api/movies
 
+### Решение
+
+#### 1. Helm-чарт (`src/kubernetes/helm/`)
+
+- `values.yaml` — образы `ghcr.io/dima-karpov/architecture-pro-cinemaabyss/*:latest`, `imagePullSecrets` из `src/kubernetes/dockerconfigsecret.yaml`
+- `templates/services/proxy-service.yaml` — Deployment + Service (по `src/kubernetes/proxy-service.yaml`)
+- `templates/services/events-service.yaml` — Deployment + Service (по `src/kubernetes/events-service.yaml`)
+- `templates/configmap.yaml` — `MOVIES_SERVICE_URL=http://movies-service:8081`, `EVENTS_SERVICE_URL`, `KAFKA_BROKERS`
+
+#### 2. Установка
+
+```bash
+kubectl delete all --all -n cinemaabyss
+kubectl delete namespace cinemaabyss
+helm install cinemaabyss ./src/kubernetes/helm --namespace cinemaabyss --create-namespace
+```
+
+**Локально на Mac:** `minikube image load` для 4 образов + patch `imagePullPolicy: IfNotPresent` (в git остаётся `Always`).
+
+#### 3. Проверка
+
+- `kubectl get pods -n cinemaabyss` — 7 подов `1/1 Running`
+- `minikube tunnel` → `curl http://cinemaabyss.example.com/api/movies` — JSON со списком фильмов
+
+#### 4. Скриншоты
+
+**`helm list` — релиз deployed:**
+
+![helm list deployed](docs/screenshots/assignment-4/helm-list-deployed.png)
+
+**`kubectl get pods` — 7 Running:**
+
+![kubectl get pods — 7 Running](docs/screenshots/assignment-4/helm-pods.png)
+
+**curl /api/movies через Ingress:**
+
+![curl /api/movies](docs/screenshots/assignment-4/helm-movies-api.png)
+
 
 # Задание 5
 Компания планирует активно развиваться и для повышения надежности, безопасности, реализации сетевых паттернов типа Circuit Breaker и канареечного деплоя вам как архитектору необходимо развернуть istio и настроить circuit breaker для monolith и movies сервисов.
@@ -414,6 +547,67 @@ You can see 21 for the upstream_rq_pending_overflow value which means 21 calls s
 ```
 
 Приложите скриншот работы circuit breaker'а
+
+### Решение
+
+#### 1. Circuit Breaker (`src/kubernetes/circuit-breaker-config.yaml`)
+
+Два `DestinationRule` — для `movies-service` и `monolith`:
+
+- `connectionPool.tcp.maxConnections: 1` — макс. 1 TCP-соединение
+- `connectionPool.http.http1MaxPendingRequests: 1` — макс. 1 запрос в очереди
+- `connectionPool.http.maxRequestsPerConnection: 1` — макс. 1 запрос на соединение
+- `outlierDetection` — выбрасывает pod из пула при серии 5xx
+
+При превышении лимитов Envoy (istio-proxy) немедленно отвечает **503 Service Unavailable**.
+
+Лимиты занижены для демонстрации CB в Fortio; в проде `maxConnections`, pending и `maxEjectionPercent` настраивают под SLA и число реплик.
+
+#### 2. Установка Istio + sidecar injection
+
+```bash
+helm repo add istio https://istio-release.storage.googleapis.com/charts
+helm repo update
+helm install istio-base istio/base -n istio-system --set defaultRevision=default --create-namespace
+helm install istiod istio/istiod -n istio-system --wait
+
+kubectl label namespace cinemaabyss istio-injection=enabled --overwrite
+helm install cinemaabyss ./src/kubernetes/helm --namespace cinemaabyss --create-namespace
+kubectl apply -f ./src/kubernetes/circuit-breaker-config.yaml -n cinemaabyss
+```
+
+**Локально на Mac (arm64):** `minikube image load` для 4 образов + `kubectl patch` `imagePullPolicy: IfNotPresent`.
+
+#### 3. Fortio load test
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.25/samples/httpbin/sample-client/fortio-deploy.yaml -n cinemaabyss
+FORTIO_POD=$(kubectl get pod -n cinemaabyss -l app=fortio -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n cinemaabyss $FORTIO_POD -c fortio -- \
+  fortio load -c 50 -qps 0 -n 500 -loglevel Warning http://movies-service:8081/api/movies
+```
+
+Результат: `10.106.76.52:8081`, Code 503 — 96.8% (484/500) — circuit breaker сработал.
+
+![Fortio load test — Code 503](docs/screenshots/assignment-5/fortio-load-test.png)
+
+Аналогично проверен `monolith` — `DestinationRule monolith-cb` применён, Fortio на `http://monolith:8080/api/users` даёт ~100% Code 503:
+
+```bash
+kubectl exec -n cinemaabyss $FORTIO_POD -c fortio -- \
+  fortio load -c 50 -qps 0 -n 500 -loglevel Warning http://monolith:8080/api/users
+```
+
+#### 4. Статистика istio-proxy
+
+```bash
+kubectl exec -n cinemaabyss $FORTIO_POD -c istio-proxy -- \
+  pilot-agent request GET stats | grep movies-service | grep pending
+```
+
+`upstream_rq_pending_overflow: 548` — запросы, отклонённые circuit breaker'ом.
+
+![istio-proxy stats — upstream_rq_pending_overflow](docs/screenshots/assignment-5/fortio-stats-pending.png)
 
 Удаляем все
 ```bash

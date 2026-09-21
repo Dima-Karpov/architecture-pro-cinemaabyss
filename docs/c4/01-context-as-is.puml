@@ -1,0 +1,44 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title System Context — CinemaAbyss (As-Is)
+
+Person(client, "Клиент", "Web, mobile, TV. Разные UI, один REST API. BFF нет")
+
+System(monolith, "Монолит CinemaAbyss", "Один процесс Go :8080. Синхронный REST JSON → SQL в том же запросе. src/monolith/main.go")
+
+SystemDb(postgres, "PostgreSQL", "Одна схема cinemaabyss. Все домены в одной БД. src/database/init.sql")
+
+Rel(client, monolith, "Синхронно вызывает REST API", "HTTP JSON request/response")
+Rel(monolith, postgres, "Синхронно читает и пишет данные", "SQL")
+
+note right of monolith
+  **API в коде**
+  GET /health
+  GET/POST /api/users (?id=)
+  GET/POST /api/movies (?id=, жанры в movie_genres)
+  GET/POST /api/payments (?id=, ?user_id=)
+  GET/POST /api/subscriptions (?id=, ?user_id=)
+  ----
+  **В кейсе, но не в коде**
+  аутентификация, избранное, оценки как API, скидки
+  рекомендательная система
+  внешние лояльность / маркетплейсы / платёжные шлюзы
+  ----
+  movies-service, proxy, Kafka, events — To-Be, не рисуем
+end note
+
+note right of postgres
+  **users** — id, username, email, password_hash
+  **movies** — id, title, description, rating, …
+  **movie_genres** — movie_id, genre
+  **payments** — id, user_id, amount, timestamp, …
+  **subscriptions** — id, user_id, plan_type, start_date, end_date, …
+  ----
+  **views**, **user_ratings** — таблицы есть,
+  HTTP-хендлеров нет
+end note
+
+SHOW_LEGEND()
+@enduml

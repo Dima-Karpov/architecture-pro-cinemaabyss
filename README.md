@@ -1,5 +1,25 @@
 # Архитектура микросервисов CinemaAbyss
 
+## Задание 1. Проектирование архитектуры (To-Be)
+
+Домены As-Is → To-Be, интеграция и единая точка входа — в [docs/domains-as-is-to-be.md](docs/domains-as-is-to-be.md).
+
+| Домен | To-Be контейнер |
+| --- | --- |
+| Пользователи, authn | **monolith** (bounded context users) |
+| Метаданные фильмов | **movies-service** |
+| Платежи, подписки, скидки | **monolith** (bounded contexts) |
+| Domain events | **events-service** + **Kafka** |
+| Рекомендации | **System_Ext** (внешняя система) |
+
+**Единая точка входа:** `proxy-service` (:8000) — web / mobile / Smart TV → API Gateway → monolith / movies / events.
+
+![Container — CinemaAbyss (To-Be)](docs/c4/02-container-to-be.svg)
+
+Исходник: [docs/c4/02-container-to-be.puml](docs/c4/02-container-to-be.puml) · As-Is Context: [docs/c4/01-context-as-is.puml](docs/c4/01-context-as-is.puml)
+
+---
+
 ## Обзор.
  В проекте реализована следующая функциональность:
 
@@ -68,8 +88,11 @@ GitHub Actions для непрерывной интеграции и разве�
 
 - Сборка и тестирование микросервисов
 - Сборка и выгрузка Docker-образов
+- Сборка C4-схем: `docs/**/*.puml` → SVG рядом, коммит в git ([`.github/workflows/plantuml.yml`](.github/workflows/plantuml.yml))
 
 Расположены в .github/workflows/.
+
+Исходники схем — `docs/c4/*.puml`. Картинку собирает Actions и кладёт рядом: `docs/c4/*.svg`.
 
 
 ## Детали реализации
@@ -83,35 +106,119 @@ GitHub Actions для непрерывной интеграции и разве�
 
 Это позволяет осуществлять контролируемый постепенный переход без нарушения работы пользователей.
 
+## Локальная разработка (Make)
+
+Из корня репозитория.
+
+### Требования
+
+- **Docker** и **Docker Compose** — для `make up` / `make down`
+- **Go 1.23+** — для `make build` и `make run`
+- **Node.js 18+** и **npm** — для `make test-api` (Newman)
+
+### Быстрый старт
+
+Полный цикл проверки (lint → build → compose → Postman → остановка):
+
+```bash
+make lint-microservices
+make build-microservices
+make up
+make test-api
+make down
+```
+
+После `make up` сервисы доступны:
+
+| Сервис | URL |
+| --- | --- |
+| API Gateway (proxy) | http://localhost:8000 |
+| Monolith | http://localhost:8080 |
+| Movies Service | http://localhost:8081 |
+| Events Service | http://localhost:8082 |
+| Kafka UI | http://localhost:8090 |
+
+### Команды
+
+| Команда | Описание |
+| --- | --- |
+| `make help` | список команд |
+| `make lint proxy` / `make lint events` | golangci-lint в Docker (v2.6.2) |
+| `make build proxy` / `make build events` | сборка бинарника в `bin/` |
+| `make run <service>` | локальный запуск с env из compose (`proxy`, `events`, `movies`, `monolith`) |
+| `make lint-microservices` / `make build-microservices` | proxy + events разом |
+| `make up` / `make down` | `docker compose up -d --build` / `down` |
+| `make test-api` | Postman-тесты (`tests/postman`, local env) |
+
+### Локальный run (без пересборки compose)
+
+Когда меняете только Go-код одного сервиса, поднимите инфраструктуру через compose, а сервис — в отдельном терминале:
+
+```bash
+# терминал 1 — postgres, kafka и остальные контейнеры
+make up
+
+# терминалы 2–5 — только нужные сервисы (остальные остаются в Docker)
+make run monolith
+make run movies
+make run events
+make run proxy
+```
+
+`make run` подставляет те же переменные окружения, что и `docker-compose.yml` (порты, URL backend'ов, `MOVIES_MIGRATION_PERCENT`).
+
+### Проверка Strangler Fig
+
+1. Измените `MOVIES_MIGRATION_PERCENT` в [`docker-compose.yml`](docker-compose.yml) (например, `"0"` — всё в monolith, `"100"` — всё в movies-service).
+2. Перезапустите стек: `make down && make up`
+3. Отправьте запросы через gateway и смотрите логи proxy:
+
+```bash
+curl http://localhost:8000/api/movies
+curl http://localhost:8000/api/movies/1
+docker logs cinemaabyss-proxy-service
+```
+
+В логах proxy видно, какой backend выбран (`monolith` / `movies-service`) для каждого запроса.
+
+### Примеры curl (через gateway)
+
+```bash
+# health
+curl http://localhost:8000/api/health
+curl http://localhost:8000/api/movies/health
+curl http://localhost:8000/api/events/health
+
+# monolith через proxy
+curl http://localhost:8000/api/users
+curl http://localhost:8000/api/movies
+
+# events (Part 2)
+curl -X POST http://localhost:8000/api/events/movie \
+  -H 'Content-Type: application/json' \
+  -d '{"movie_id":1,"title":"Test","action":"view","user_id":1}'
+```
+
+### Скриншоты и описание решения
+
+Скриншоты проверки задания 2: [docs/screenshots/assignment-2/](docs/screenshots/assignment-2/) (Part 1 — Postman summary и proxy; Part 2 — после Kafka).
+
+Описание решения: [Project_template.md](Project_template.md#решение)
+
 ## Deployment Instructions
 
 ### Local Development with Docker Compose
 
-1. Необходимо, чтобы был установлен docker и docker-compose
+Требования и быстрый старт через Make — в секции [Локальная разработка (Make)](#локальная-разработка-make). Кратко:
 
-2. Запускаем сервисы с помощью Docker Compose:
-   ```bash
-   docker-compose up -d
-   ```
+```bash
+make up    # docker compose up -d --build
+make down  # docker compose down
+```
 
-После запуска сервисы доступны:
-- Monolith: http://localhost:8080
-- Movies Service: http://localhost:8081
-- Events Service: http://localhost:8082
-- API Gateway (Proxy): http://localhost:8000
-- Kafka UI: http://localhost:8090
+Альтернатива без Make: `docker compose up -d --build` / `docker compose down`.
 
-3. Останавливаем сервисы:
-   ```bash
-   docker-compose down -v
-   ```
-
-4. После внесения изменений рестартим:
-
-   ```bash
-   docker-compose build
-   docker-compose up -d
-   ```
+Порты сервисов — в таблице выше. Для пересборки после изменений: `make down && make up`.
 
 ### Kubernetes Deployment
 
@@ -211,12 +318,5 @@ chmod +x run-tests.sh
 ```
 
 ### Тестирование деплоя руками
-1. Тестирование с Docker Compose
 
-   Отправьте запросы к API Gateway:
-   ```bash
-   curl http://localhost:8000/api/movies
-   ```
-2. Протестируйте постепенный переход, изменив переменную окружения MOVIES_MIGRATION_PERCENT в файле docker-compose.yml.
-
-3. Проверьте топики Kafka и сообщения через Kafka UI по адресу http://localhost:8090
+Примеры `curl`, проверка Strangler Fig и Kafka UI — в секции [Локальная разработка (Make)](#локальная-разработка-make).
