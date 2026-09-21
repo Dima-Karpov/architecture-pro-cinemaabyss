@@ -548,6 +548,67 @@ You can see 21 for the upstream_rq_pending_overflow value which means 21 calls s
 
 Приложите скриншот работы circuit breaker'а
 
+### Решение
+
+#### 1. Circuit Breaker (`src/kubernetes/circuit-breaker-config.yaml`)
+
+Два `DestinationRule` — для `movies-service` и `monolith`:
+
+- `connectionPool.tcp.maxConnections: 1` — макс. 1 TCP-соединение
+- `connectionPool.http.http1MaxPendingRequests: 1` — макс. 1 запрос в очереди
+- `connectionPool.http.maxRequestsPerConnection: 1` — макс. 1 запрос на соединение
+- `outlierDetection` — выбрасывает pod из пула при серии 5xx
+
+При превышении лимитов Envoy (istio-proxy) немедленно отвечает **503 Service Unavailable**.
+
+Лимиты занижены для демонстрации CB в Fortio; в проде `maxConnections`, pending и `maxEjectionPercent` настраивают под SLA и число реплик.
+
+#### 2. Установка Istio + sidecar injection
+
+```bash
+helm repo add istio https://istio-release.storage.googleapis.com/charts
+helm repo update
+helm install istio-base istio/base -n istio-system --set defaultRevision=default --create-namespace
+helm install istiod istio/istiod -n istio-system --wait
+
+kubectl label namespace cinemaabyss istio-injection=enabled --overwrite
+helm install cinemaabyss ./src/kubernetes/helm --namespace cinemaabyss --create-namespace
+kubectl apply -f ./src/kubernetes/circuit-breaker-config.yaml -n cinemaabyss
+```
+
+**Локально на Mac (arm64):** `minikube image load` для 4 образов + `kubectl patch` `imagePullPolicy: IfNotPresent`.
+
+#### 3. Fortio load test
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.25/samples/httpbin/sample-client/fortio-deploy.yaml -n cinemaabyss
+FORTIO_POD=$(kubectl get pod -n cinemaabyss -l app=fortio -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n cinemaabyss $FORTIO_POD -c fortio -- \
+  fortio load -c 50 -qps 0 -n 500 -loglevel Warning http://movies-service:8081/api/movies
+```
+
+Результат: `10.106.76.52:8081`, Code 503 — 96.8% (484/500) — circuit breaker сработал.
+
+![Fortio load test — Code 503](docs/screenshots/assignment-5/fortio-load-test.png)
+
+Аналогично проверен `monolith` — `DestinationRule monolith-cb` применён, Fortio на `http://monolith:8080/api/users` даёт ~100% Code 503:
+
+```bash
+kubectl exec -n cinemaabyss $FORTIO_POD -c fortio -- \
+  fortio load -c 50 -qps 0 -n 500 -loglevel Warning http://monolith:8080/api/users
+```
+
+#### 4. Статистика istio-proxy
+
+```bash
+kubectl exec -n cinemaabyss $FORTIO_POD -c istio-proxy -- \
+  pilot-agent request GET stats | grep movies-service | grep pending
+```
+
+`upstream_rq_pending_overflow: 548` — запросы, отклонённые circuit breaker'ом.
+
+![istio-proxy stats — upstream_rq_pending_overflow](docs/screenshots/assignment-5/fortio-stats-pending.png)
+
 Удаляем все
 ```bash
 istioctl uninstall --purge
